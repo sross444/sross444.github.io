@@ -73,11 +73,12 @@
 <script>
 
 var formatDateIntoYear = d3.timeFormat("%Y");
-var formatDate = d3.timeFormat("%b %Y");
-var parseDate = d3.timeParse("%m/%d/%y");
-
-var startDate = new Date("2004-11-01"),
-    endDate = new Date("2017-04-01");
+var formatDate = d3.timeFormat("%b %d");
+//var parseDate = d3.timeParse("%m/%d/%y");
+var parseDate = d3.time.format("%Y-%m-%d %X");
+  
+var startDate = new Date("2017-11-25"),
+    endDate = new Date("2017-11-30");
 
 var margin = {top:50, right:50, bottom:0, left:50},
     width = 960 - margin.left - margin.right,
@@ -152,7 +153,7 @@ var plot = svg.append("g")
     .attr("class", "plot")
     .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
-d3.csv("circles.csv", prepare, function(data) {
+d3.csv("wave_data.csv", prepare, function(data) {
   dataset = data;
   drawPlot(dataset);
   
@@ -174,7 +175,7 @@ d3.csv("circles.csv", prepare, function(data) {
 })
 
 function prepare(d) {
-  d.id = d.id;
+  d.sc = d.sc;
   d.date = parseDate(d.date);
   return d;
 }
