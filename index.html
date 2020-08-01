@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<head>
+  <meta charset="utf-8">
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+  <style>
+    body {
+      font-family:"avenir next", Arial, sans-serif;
+      font-size: 12px;
+      color: #696969;
+    }
+
+    #play-button {
+      position: absolute;
+      top: -50px;
+      left: 50px;
+      background: #f08080;
+      padding-right: 26px;
+      border-radius: 3px;
+      border: none;
+      color: white;
+      margin: 0;
+      padding: 0 12px;
+      width: 60px;
+      cursor: pointer;
+      height: 30px;
+    }
+
+    #play-button:hover {
+      background-color: #696969;
+    }    
+    
+    #globe {
+	float: left;
+	}
+/*
+    #heightCharts {
+	position: relative;
+	left: 600px;
+	top: 0px;
+	}
+*/
+    #vis {
+      position: absolute;
+      top: 600px;
+      left: 50px;
+	}
+    #bbottomBox {
+      position: absolute;
+      top: 750px;
+      left: 50px;
+	}
+    /* On mouse hover, lighten state color 
+    path:hover {
+	fill-opacity: .7;
+    }
+*/
+    .ticks {
+      font-size: 10px;
+    }
+
+    .track,
+    .track-inset,
+    .track-overlay {
+      stroke-linecap: round;
+    }
+
+    .track {
+      stroke: #000;
+      stroke-opacity: 0.3;
+      stroke-width: 10px;
+    }
+
+    .track-inset {
+      stroke: #dcdcdc;
+      stroke-width: 8px;
+    }
+
+    .track-overlay {
+      pointer-events: stroke;
+      stroke-width: 50px;
+      stroke: transparent;
+      cursor: crosshair;
+    }
+
+    .handle {
+      fill: #fff;
+      stroke: #000;
+      stroke-opacity: 0.5;
+      stroke-width: 1.25px;
+    }
+
+  .land {
+    fill: #E0E4CC;
+    stroke: #ACAF9F;
+    stroke-width: 1;
+  }
+
+  .graticule {
+    fill: none;
+    stroke: #79A09E;
+    stroke-width: 1;
+    stroke-dasharray: 1,1;
+  }
+
+/* Style for Custom Tooltip */
+div.tooltip {   
+ 	position: absolute;           
+	text-align: center;           
+	width: 80px;                  
+	height: 35px;                 
+	padding: 2px;             
+	font: 15px sans-serif;        
+	background: #fff;   
+	border: 0px;      
+	border-radius: 8px;           
+	pointer-events: none; 
+}
+
+  </style>
+</head>
+
+<body>
+
+<head>
+<title>Surfs Up</title>
+</head>
+
+<div class="row" width = "1000px" height = "600px">
+<div id="globe" width = "600px" height = "600px">
+	<svg width="600px" height="600px"></svg>
+</div>
+<div id = 'scChart'></div>
+<div id = 'hiChart'></div>
+<div id = 'taChart'></div>
+</div>
+<div id="vis" width = "1000px" height = "150px" >
+  <button id="play-button">Start!</button>
+</div>
+<div id="bbottomBox" width = "1000px" height = "150px">
+</div>
+
+<script>
+
+
+////////// helpers for slider //////////
+var formatDateIntoYear = d3.timeFormat("%d");
+var formatDate = d3.timeFormat("%b %d %H:00");
+//var parseDate = d3.timeParse("%m/%d/%y");
+//The format in the CSV, which d3 will read
+var parseDate = d3.timeParse("%Y-%m-%d %H:%M:%S");
+
+
+d3.csv("http://sross444.github.io/buoy_data.csv", prepare, function(bd) {
+d3.json('https://gist.githubusercontent.com/d3indepth/f28e1c3a99ea6d84986f35ac8646fac7/raw/c58cede8dab4673c91a3db702d50f7447b373d98/ne_110m_land.json', function(err, geojson) {
+d3.csv("http://sross444.github.io/wave_data.csv", prepare2, function(wd) {
+	var margin = {top:20, right:50, bottom:20, left:50},
+	    width = 1000 - margin.left - margin.right,
+	    height = 150 - margin.top - margin.bottom;
+
+
+	var svg = d3.select("#vis")
+	    .append("svg")
+	    .attr("width", width + margin.left + margin.right)
+	    .attr("height", height + margin.top + margin.bottom);  
+
+
+	var moving = false;
+
+	var currentValue = 0;
+
+	var playButton = d3.select("#play-button");
+	
+	var startDate = bd[0].date, endDate = bd[335].date;
+    
+	var x = d3.scaleTime()
+	    .domain([startDate, endDate])
+	    .range([0, width])
+	    .clamp(true);
+
+	var x_pct = d3.scaleTime()
+	    .domain([startDate, endDate])
+	    .range([0, 1])
+	    .clamp(true);
+
+	var slider = svg.append("g")
+	    .attr("class", "slider")
+	    .attr("transform", "translate(" + margin.left + "," + height/5 + ")");
+
+	slider.append("line")
+	    .attr("class", "track")
+	    .attr("x1", x.range()[0])
+	    .attr("x2", x.range()[1])
+	  .select(function() { return this.parentNode.appendChild(this.cloneNode(true)); })
+	    .attr("class", "track-inset")
+	  .select(function() { return this.parentNode.appendChild(this.cloneNode(true)); })
+	    .attr("class", "track-overlay")
+	    .call(d3.drag()
+		.on("start.interrupt", function() { slider.interrupt(); })
+		.on("start drag", function() {
+		  currentValue = d3.event.x;
+		  update(x.invert(currentValue)); 
+		})
+	    );
+
+	slider.insert("g", ".track-overlay")
+	    .attr("class", "ticks")
+	    .attr("transform", "translate(0," + 18 + ")")
+	  .selectAll("text")
+	    .data(x.ticks(10))
+	    .enter()
+	    .append("text")
+	    .attr("x", x)
+	    .attr("y", 10)
+	    .attr("text-anchor", "middle")
+	    .text(function(d) { return formatDateIntoYear(d); });
+
+	var handle = slider.insert("circle", ".track-overlay")
+	    .attr("class", "handle")
+	    .attr("r", 9);
+
+	var label = slider.append("text")  
+	    .attr("class", "label")
+	    .attr("text-anchor", "middle")
+	    .text(formatDate(startDate))
+	    .attr("transform", "translate(0," + (-25) + ")")
+
+	function drawSurf(data) {
+	var x = d3.scaleTime()
+	    .domain([startDate, endDate])
+	    .range([0, width])
+	    .clamp(true);
+
+	var x_pct = d3.scaleTime()
+	    .domain([startDate, endDate])
+	    .range([0, 1])
+	    .clamp(true);
+	var i_ = x_pct(x.invert(currentValue));
+
+	if (i_ < .15){
+		d3.select('#bbottomBox').html("");
+		var bb = d3.select('#bbottomBox').style('position','absolute')
+.style('top','650px').style('left','25px').style('width','1000px').style('height','150px')
+
+		bb.append('svg')
+		.attr('width',1000).attr('height',85)
+		.selectAll("text").data([{hi:1}]).enter().append("text")
+		.attr("x",150).attr("y",75).attr('font-size','24px').attr('fill','#FF006E')
+		.text('This is the amazing story of the great West Pacific Swell of 2017!')
+		.transition().duration(10000).style('opacity',0);
+
+		bb.append('svg')
+		.attr('width',1000).attr('height',85)
+		.selectAll("text").data([{hi:1}]).enter().append("text")
+		.attr("x",150).attr("y",75).attr('font-size','24px').attr('fill','#FF006E')
+		.text('Click Start! to Explore')
+		.transition().duration(10000).style('opacity',0);
+	}
+	console.log(i_);
+	if (i_ > .15 & i_ < .33){
+		d3.select('#bbottomBox').html("");
+		var bb = d3.select('#bbottomBox').style('position','absolute')
+.style('top','650px').style('left','25px').style('width','1000px').style('height','150px')
+
+		bb.append('svg')
+		.attr('width',1000).attr('height',85)
+		.selectAll("text").data([{hi:1}]).enter().append("text")
+		.attr("x",150).attr("y",75).attr('font-size','24px').attr('fill','#FF006E')
+		.text('The swell is starting to pound Tahiti!')
+		.transition().duration(10000).style('opacity',0);
+
+		bb.append('svg')
+		.attr('width',1000).attr('height',85)
+		.selectAll("text").data([{hi:1}]).enter().append("text")
+		.attr("x",150).attr("y",75).attr('font-size','24px').attr('fill','#FF006E')
+		.text('Some of the biggest waves ever to hit the islands!')
+		.transition().duration(10000).style('opacity',0);
+	}
+	if (i_ > .33 & i_ < .48){
+		d3.select('#bbottomBox').html("");
+		var bb = d3.select('#bbottomBox').style('position','absolute')
+.style('top','650px').style('left','25px').style('width','1000px').style('height','150px')
+
+		bb.append('svg')
+		.attr('width',1000).attr('height',85)
+		.selectAll("text").data([{hi:1}]).enter().append("text")
+		.attr("x",150).attr("y",75).attr('font-size','24px').attr('fill','#FF006E')
+		.text("Now Hawai'i is getting in on the action.")
+		.transition().duration(10000).style('opacity',0);
+
+		bb.append('svg')
+		.attr('width',1000).attr('height',85)
+		.selectAll("text").data([{hi:1}]).enter().append("text")
+		.attr("x",150).attr("y",75).attr('font-size','24px').attr('fill','#FF006E')
+		.text('Very powerful surf from the souther-hemisphere!')
+		.transition().duration(10000).style('opacity',0);
+	}
+	if (i_ > .48 & i_ < .6){
+		d3.select('#bbottomBox').html("");
+		var bb = d3.select('#bbottomBox').style('position','absolute')
+		.style('top','650px').style('left','25px').style('width','1000px').style('height','150px')
+
+		bb.append('svg')
+		.attr('width',1000).attr('height',85)
+		.selectAll("text").data([{hi:1}]).enter().append("text")
+		.attr("x",150).attr("y",75).attr('font-size','24px').attr('fill','#FF006E')
+		.text("A unique moment:  Surfers in California and")
+		.transition().duration(10000).style('opacity',0);
+
+		bb.append('svg')
+		.attr('width',1000).attr('height',85)
+		.selectAll("text").data([{hi:1}]).enter().append("text")
+		.attr("x",150).attr("y",75).attr('font-size','24px').attr('fill','#FF006E')
+		.text('Tahiti can surf waves from the save storm!')
+		.transition().duration(10000).style('opacity',0);
+	}
+	if (i_ > .6 & i_ < .85){
+		d3.select('#bbottomBox').html("");
+		var bb = d3.select('#bbottomBox').style('position','absolute')
+		.style('top','650px').style('left','25px').style('width','1000px').style('height','150px')
+
+		bb.append('svg')
+		.attr('width',1000).attr('height',85)
+		.selectAll("text").data([{hi:1}]).enter().append("text")
+		.attr("x",150).attr("y",75).attr('font-size','24px').attr('fill','#FF006E')
+		.text("California is now seeing very fun and sizable swell!")
+		.transition().duration(10000).style('opacity',0);
+
+		bb.append('svg')
+		.attr('width',1000).attr('height',85)
+		.selectAll("text").data([{hi:1}]).enter().append("text")
+		.attr("x",150).attr("y",75).attr('font-size','24px').attr('fill','#FF006E')
+		.text('Surfers down to Mexico are enjoying fun waves!')
+		.transition().duration(10000).style('opacity',0);
+	}
+	if (i_ > .85){
+		d3.select('#bbottomBox').html("");
+		var bb = d3.select('#bbottomBox').style('position','absolute')
+		.style('top','650px').style('left','25px').style('width','1000px').style('height','150px')
+
+		bb.append('svg')
+		.attr('width',1000).attr('height',85)
+		.selectAll("text").data([{hi:1}]).enter().append("text")
+		.attr("x",150).attr("y",75).attr('font-size','24px').attr('fill','#FF006E')
+		.text("What an amazing weather event!")
+		.transition().duration(10000).style('opacity',0);
+
+		bb.append('svg')
+		.attr('width',1000).attr('height',85)
+		.selectAll("text").data([{hi:1}]).enter().append("text")
+		.attr("x",150).attr("y",75).attr('font-size','24px').attr('fill','#FF006E')
+		.text('This swell produced surfable waves for over 2 weeks!')
+		.transition().duration(10000).style('opacity',0);
+	}
+/*	
+  var locations = plot.selectAll(".location")
+	    .data(data);
+
+	  // if filtered dataset has more circles than already existing, transition new ones in
+	  locations.enter()
+	    .append("circle")
+	    .attr("class", "location")
+	    .attr("cx", function(d) { return x(d.date); })
+	    .attr("cy", height/2)
+	    .style("fill", function(d) { return d3.hsl(d.date/1000000000, 0.8, 0.8)})
+	    .style("stroke", function(d) { return d3.hsl(d.date/1000000000, 0.7, 0.7)})
+	    .style("opacity", 0.5)
+	    .attr("r", 8)
+	      .transition()
+	      .duration(400)
+	      .attr("r", 25)
+		.transition()
+		.attr("r", 8);
+
+	  // if filtered dataset has less circles than already existing, remove excess
+	  locations.exit()
+	    .remove();
+*/
+	}
+
+	function update(h, firstTime = false) {
+	  // update position and text of label according to slider scale
+	  handle.attr("cx", x(h));
+	  label
+	    .attr("x", x(h))
+	    .text(formatDate(h));
+
+	  drawSurf();
+	  updateGlobe(firstTime = firstTime);
+	  flashHeightCharts();
+	}
+
+	function step() {
+	  update(x.invert(currentValue));
+	  currentValue = currentValue + (width/336);
+	  if (currentValue > width) {
+	    moving = false;
+	    currentValue = 0;
+	    clearInterval(timer);
+	    // timer = 0;
+	    playButton.text("Start!");
+	  }
+	}
+	playButton
+		.on("click", function() {
+		var button = d3.select(this);
+		if (button.text() == "Pause") {
+		moving = false;
+		clearInterval(timer);
+		// timer = 0;
+		button.text("Start!");
+		} else {
+		moving = true;
+		timer = setInterval(step, 150);
+		button.text("Pause");
+		}
+	})
+
+
+// ************* BEGIN GLOBE !!!! ****************************************
+	function updateGlobe(firstTime = false){
+
+	function sortFunction(a, b) {
+	    if (a[0] === b[0]) {
+		return 0;
+	    }
+	    else {
+		return (a[0] < b[0]) ? -1 : 1;
+	    }
+	}
+
+	var startDate = bd[0].date, endDate = bd[335].date;
+	var x = d3.scaleTime()
+	    .domain([startDate, endDate])
+	    .range([0, width])
+	    .clamp(true);
+
+	var x_pct = d3.scaleTime()
+	    .domain([startDate, endDate])
+	    .range([0, 1])
+	    .clamp(true);
+	var Gwidth = 600, Gheight = 600;
+
+	var projection = d3.geoOrthographic()
+	  .scale(275)
+	  .center([0,0])
+	  .rotate([125,10,5])
+	  .translate([Gwidth / 2, Gheight / 2]);
+
+	var path = d3.geoPath()
+	  .projection(projection)
+	
+	d3.select('#globe svg').remove();
+	var svg2 = d3.select('#globe').append('svg').attr('height',Gheight).attr('width',Gwidth);
+
+	var scL = [90-33.2,180-37.2], hiL = [24,160], swellL = [10,235], taL = [18,200]	
+
+	var waveHeightScale=d3.scaleLinear().domain([3,16,28]).range(['lightblue','orange','pink']);
+
+	var i_ = x_pct(x.invert(currentValue));
+
+	wd.forEach(function(d,i){
+		if (i%50 == 0) {
+		var circle = d3.geoCircle().center(swellL).radius(3+(d.speed-14)/90*6+(3+d.speed/.78)*3.1*i_);
+		var coords = circle().coordinates[0].filter(function(d){
+			return d[0] < 10 & d[1] > -55})
+		coords.sort(sortFunction);	
+
+		svg2.append("path").datum({type:"LineString", coordinates: coords}).attr('d',path).style("stroke",waveHeightScale(d.height)).style('stroke-width',"2").style('fill','none').style('stroke-opacity','0.4');
+		}
+	});
+
+	var graticule = d3.geoGraticule()
+	.step([10, 10]);
+	
+	svg2.selectAll('path.graticule').data([graticule()]).
+		enter().append('path')
+		.classed('graticule',true).attr('d',path);
+
+
+	g = svg2.append('g');
+	g.selectAll('path').data(geojson.features)
+		.enter().append("path").attr('d', path).classed('land',true);
+
+	// Append Div for tooltip to SVG
+	var div = d3.select('#globe').append("div")   
+    		.attr("class", "tooltip")               
+    		.style("opacity", 0);
+
+
+//swell circle!
+	var circle = d3.geoCircle().center(swellL).radius(1.25);
+	svg2.append("path").datum({type:"LineString", coordinates: circle().coordinates[0]}).attr('d',path).style("stroke","red").style('stroke-width',"1.5").style('fill','red').style('fill-opacity',.4)
+	.on("mouseover", function(d) {      
+    	div.transition()        
+      	   .duration(400)
+	   .style('height','60px')      
+           .style("opacity", 1);      
+	   div.html('Massive Storm!<br/>80 to 100 ft')
+           .style("left", projection(swellL)[0] + "px")     
+           .style("top", (projection(swellL)[1] - 65) + "px")
+	.style('color','darkred').transition().delay(1000).style("opacity",0);
+	})
+    // fade out tooltip on mouse out               
+    .on("mouseout", function(d) {       
+        div.transition()       
+           .duration(1000)      
+           .style("opacity", 0);   
+    }).attr('id','swellTool')
+.on("click", function(d) {
+	div.transition()        
+      	   .duration(1000)      
+	   .style('height','60px')
+           .style("opacity", 1);      
+	   div.html('Massive Storm!<br/>80 to 100 ft')
+           .style("left", projection(swellL)[0] + "px")     
+           .style("top", (projection(swellL)[1] - 65) + "px")
+	   //.style("color",waveHeightScale(bd[Math.round(i_*336)].sc));
+	.style('color','darkred')
+	.transition().delay(3000).duration(2000).style("opacity",0);});
+
+//Tahiti circle!
+	var circle = d3.geoCircle().center(taL).radius(1.25);
+	svg2.append("path").datum({type:"LineString", coordinates: circle().coordinates[0]}).attr('d',path).style("stroke","blue").style('stroke-width',"1.5").style('fill','blue').style('fill-opacity',.4)
+	.on("mouseover", function(d) {      
+    	div.transition()        
+      	   .duration(400)      
+           .style("opacity", 1)		
+.style('height','40px');  
+	   div.html('Tahiti<br/>' + d3.format(".1f")(bd[Math.round(i_*336)].ta) + ' ft')
+           .style("left", projection(taL)[0] + "px")     
+           .style("top", (projection(taL)[1] - 65) + "px")
+	   //.style("color",waveHeightScale(bd[Math.round(i_*336)].sc));
+	.style('color','darkgrey').transition().delay(1000).style("opacity",0);
+	})
+    // fade out tooltip on mouse out               
+    .on("mouseout", function(d) {       
+        div.transition()        
+           .duration(1000)      
+           .style("opacity", 0);   
+    }).attr('id','taTool')
+.on("click", function(d) {
+	div.transition()        
+      	   .duration(1000)      
+           .style("opacity", 1)  
+.style('height','40px');
+	   div.html('Tahiti<br/>' + d3.format(".1f")(bd[Math.round(i_*336)].ta) + ' ft')
+           .style("left", projection(taL)[0] + "px")     
+           .style("top", (projection(taL)[1] - 65) + "px")
+	   //.style("color",waveHeightScale(bd[Math.round(i_*336)].sc));
+	.style('color','darkgrey')
+	.transition().delay(3000).duration(2000).style("opacity",0);});
+
+//Hawaii circle!
+	var circle = d3.geoCircle().center(hiL).radius(1.25);
+	svg2.append("path").datum({type:"LineString", coordinates: circle().coordinates[0]}).attr('d',path).style("stroke","green").style('stroke-width',"1.5").style('fill','green').style('fill-opacity',.4)
+	.on("mouseover", function(d) {      
+    	div.transition()        
+      	   .duration(400)      
+           .style("opacity", 1)     
+.style('height','40px');
+	   div.html('Hawaii<br/>' + d3.format(".1f")(bd[Math.round(i_*336)].hi) + ' ft')
+           .style("left", projection(hiL)[0] + "px")     
+           .style("top", (projection(hiL)[1] - 65) + "px")
+	   //.style("color",waveHeightScale(bd[Math.round(i_*336)].sc));
+	.style('color','darkgrey').transition().delay(1000).style("opacity",0);
+	})
+    // fade out tooltip on mouse out               
+    .on("mouseout", function(d) {       
+        div.transition()        
+           .duration(1000)      
+           .style("opacity", 0);   
+    }).attr('id','hiTool')
+.on("click", function(d) {
+	div.transition()        
+      	   .duration(1000)      
+           .style("opacity", 1)      
+.style('height','40px');
+	   div.html('Hawaii<br/>' + d3.format(".1f")(bd[Math.round(i_*336)].hi) + ' ft')
+           .style("left", projection(hiL)[0] + "px")     
+           .style("top", (projection(hiL)[1] - 65) + "px")
+	   //.style("color",waveHeightScale(bd[Math.round(i_*336)].sc));
+	.style('color','darkgrey')
+	.transition().delay(3000).duration(2000).style("opacity",0);});
+
+//sc circle!
+	var circle = d3.geoCircle().center(scL).radius(1.25);
+	svg2.append("path").datum({type:"LineString", coordinates: circle().coordinates[0]}).attr('d',path).style("stroke","purple").style('stroke-width',"1.5").style('fill','purple').style('fill-opacity',.4)
+	.on("mouseover", function(d) {      
+    	div.transition()        
+      	   .duration(400)      
+           .style("opacity", 1)  
+.style('height','40px');
+	   div.html('Santa Cruz<br/>' + d3.format(".1f")(bd[Math.round(i_*336)].sc) + ' ft')
+           .style("left", projection(scL)[0] + "px")     
+           .style("top", (projection(scL)[1] - 65) + "px")
+	   //.style("color",waveHeightScale(bd[Math.round(i_*336)].sc));
+	.style('color','darkgrey').transition().delay(1000).style("opacity",0);
+	})
+    // fade out tooltip on mouse out               
+    .on("mouseout", function(d) {       
+        div.transition()        
+           .duration(1000)      
+           .style("opacity", 0);   
+    }).attr('id','scTool')
+.on("click", function(d) {
+	div.transition()        
+      	   .duration(1000)      
+           .style("opacity", 1)
+.style('height','40px')      ;
+	   div.html('Santa Cruz<br/>' + d3.format(".1f")(bd[Math.round(i_*336)].sc) + ' ft')
+           .style("left", projection(scL)[0] + "px")     
+           .style("top", (projection(scL)[1] - 65) + "px")
+	   //.style("color",waveHeightScale(bd[Math.round(i_*336)].sc));
+	.style('color','darkgrey')
+	.transition().delay(3000).duration(2000).style("opacity",0);});
+
+	var mov = new MouseEvent('mouseover', {});
+	var mot = new MouseEvent('mouseout', {});
+	var click= new MouseEvent('click', {});
+
+	if(i_<.15){
+	document.getElementById('swellTool').dispatchEvent(click);}
+
+	if(i_>.15 & i_ < .3){
+	document.getElementById('taTool').dispatchEvent(click);}
+	if(i_>.48 & i_ < .62){
+	document.getElementById('hiTool').dispatchEvent(click);}
+	if(i_>.65 & i_ < .95){
+	document.getElementById('scTool').dispatchEvent(click);}
+};
+
+function drawHeightCharts(){
+	var Hwidth = 340, Hheight = 160, vMarg = 20, hMarg = 30;
+	var startDate = bd[0].date, endDate = bd[335].date;
+	var xScale = d3.scaleTime()
+	    .domain([startDate, endDate])
+	    .range([0, Hwidth])
+	    .clamp(true);
+
+	var yScale = d3.scaleLinear()
+	    .domain([0, 45]) // input
+	    .range([Hheight, 0]); // output
+		
+	var lineSC = d3.line()
+	    .x(function(d, i) {return xScale(d.date); }) // set the x values for the line generator
+	    .y(function(d) { return yScale(d.sc); }) // set the y values for the line generator 
+	    .curve(d3.curveMonotoneX) // apply smoothing to the line
+	var lineHI = d3.line()
+	    .x(function(d, i) {return xScale(d.date); }) // set the x values for the line generator
+	    .y(function(d) { return yScale(d.hi); }) // set the y values for the line generator 
+	    .curve(d3.curveMonotoneX) // apply smoothing to the line
+	var lineTA = d3.line()
+	    .x(function(d, i) {return xScale(d.date); }) // set the x values for the line generator
+	    .y(function(d) { return yScale(d.ta); }) // set the y values for the line generator 
+	    .curve(d3.curveMonotoneX) // apply smoothing to the line
+
+	// Append Div for tooltip to SVG
+	var divSC = d3.select('#scCharts').append("div")   
+    		.attr("class", "tooltip")               
+    		.style("opacity", 0);
+	svgWH = d3.select("#scPlot")
+	svgWH.append("g")
+	    .attr("class", "x axis")
+	    .attr("transform", "translate(0," + Hheight + ")")
+	    .call(d3.axisBottom(xScale).tickFormat(formatDateIntoYear));
+	svgWH.append("g")
+	    .attr("class", "y axis")
+	    .call(d3.axisLeft(yScale)).append("text")
+        .attr("x", (Hwidth/2))             
+        .attr("y", 15 )
+        .attr("text-anchor", "middle")  
+        .style("font-size", "14px") 
+        .style("fill", "purple")  
+        .text("Santa Cruz, CA Wave Heights"); // Create an axis component with d3.axisLeft
+
+	svgWH.append("path").datum(bd).attr("class","line").attr("d",lineSC)
+		.style('stroke','purple')
+		.style('stroke-width','3')
+		.style('fill','none');	
+	svgWH.selectAll(".dot").
+		data(bd).enter().append('circle').attr("class","dot")
+	    .attr("cx", function(d, i) { return xScale(d.date) })
+	    .attr("cy", function(d) { return yScale(d.sc) })
+	    .attr("r", 5)
+		.attr('fill','purple').attr('fill-opacity', 1)
+	.on("mouseover", function(d) {      
+    	divSC.transition()        
+      	   .duration(400)
+	   .style('opacity',1)
+		.style('height','20px')
+		.style('width','20px') 
+	   divSC.html(d3.format(".1f")(d.sc))
+           .style("left", (d3.event.pageX) + "px")     
+           .style("top", (d3.event.pageY- 35) + "px")
+	.style('color','black').transition().delay(1000).style("opacity",0);	})
+	.attr('id','scPlot').transition().duration(600).style('fill-opacity',0);
+
+	// Append Div for tooltip to SVG
+	var divHI = d3.select('#hiCharts').append("div")   
+    		.attr("class", "tooltip")               
+    		.style("opacity", 0);
+	svgWH = d3.select("#hiPlot")
+	svgWH.append("g")
+	    .attr("class", "x axis")
+	    .attr("transform", "translate(0," + Hheight + ")")
+	    .call(d3.axisBottom(xScale).tickFormat(formatDateIntoYear));
+	svgWH.append("g")
+	    .attr("class", "y axis")
+	    .call(d3.axisLeft(yScale)).append("text")
+        .attr("x", (Hwidth/2))             
+        .attr("y", 15 )
+        .attr("text-anchor", "middle")  
+        .style("font-size", "14px") 
+        .style("fill", "green")  
+        .text("Hawai'i Wave Heights"); // Create an axis component with d3.axisLeft
+
+	svgWH.append("path").datum(bd).attr("class","line").attr("d",lineHI)
+		.style('stroke','green')
+		.style('stroke-width','3')
+		.style('fill','none');	
+	svgWH.selectAll(".dot").
+		data(bd).enter().append('circle').attr("class","dot")
+	    .attr("cx", function(d, i) { return xScale(d.date) })
+	    .attr("cy", function(d) { return yScale(d.hi) })
+	    .attr("r", 5)
+		.attr('fill','green').attr('fill-opacity', 1)
+	.on("mouseover", function(d) {      
+    	divHI.transition()        
+      	   .duration(400)
+	   .style('opacity',1)
+		.style('height','20px')
+		.style('width','20px') 
+	   divHI.html(d3.format(".1f")(d.hi))
+           .style("left", (d3.event.pageX) + "px")     
+           .style("top", (d3.event.pageY- 35) + "px")
+	.style('color','black').transition().delay(1000).style("opacity",0);	})
+	.attr('id','hiPlot').transition().duration(600).style('fill-opacity',0);
+
+	// Append Div for tooltip to SVG
+	var divTA = d3.select('#taCharts').append("div")   
+    		.attr("class", "tooltip")               
+    		.style("opacity", 0);
+	svgWH = d3.select("#taPlot")
+	svgWH.append("g")
+	    .attr("class", "x axis")
+	    .attr("transform", "translate(0," + Hheight + ")")
+	    .call(d3.axisBottom(xScale).tickFormat(formatDateIntoYear));
+	svgWH.append("g")
+	    .attr("class", "y axis")
+	    .call(d3.axisLeft(yScale)).append("text")
+        .attr("x", (Hwidth/2)+25)             
+        .attr("y", 15 )
+        .attr("text-anchor", "middle")  
+        .style("font-size", "14px") 
+        .style("fill", "blue")  
+        .text("Tahiti Wave Heights"); // Create an axis component with d3.axisLeft
+
+	svgWH.append("path").datum(bd).attr("class","line").attr("d",lineTA)
+		.style('stroke','blue')
+		.style('stroke-width','3')
+		.style('fill','none');	
+	svgWH.selectAll(".dot").
+		data(bd).enter().append('circle').attr("class","dot")
+	    .attr("cx", function(d, i) { return xScale(d.date) })
+	    .attr("cy", function(d) { return yScale(d.ta) })
+	    .attr("r", 5)
+		.attr('fill','blue').attr('fill-opacity', 1)
+	.on("mouseover", function(d) {      
+    	divTA.transition()        
+      	   .duration(400)
+	   .style('opacity',1)
+		.style('height','20px')
+		.style('width','20px') 
+	   divTA.html(d3.format(".1f")(d.ta))
+           .style("left", (d3.event.pageX) + "px")     
+           .style("top", (d3.event.pageY- 35) + "px")
+	.style('color','black').transition().delay(1000).style("opacity",0);	})
+	.attr('id','taPlot').transition().duration(600).style('fill-opacity',0);
+
+
+}
+
+function flashHeightCharts(){
+	var Hwidth = 340, Hheight = 160, vMarg = 20, hMarg = 30;
+	var startDate = bd[0].date, endDate = bd[335].date;
+
+	var x = d3.scaleTime()
+	    .domain([startDate, endDate])
+	    .range([0, 900]) //width used for slider :)
+	    .clamp(true);
+
+	var xScale = d3.scaleTime()
+	    .domain([startDate, endDate])
+	    .range([0, Hwidth])
+	    .clamp(true);
+
+	var yScale = d3.scaleLinear()
+	    .domain([0, 45]) // input
+	    .range([Hheight, 0]); // output
+		
+
+	var div2 = d3.select('#heightCharts').append("div")   
+    		.attr("class", "tooltip")               
+    		.style("opacity", 0);
+
+	var todayNow = d3.min(bd.filter(function(d) {return d.date >= x.invert(currentValue);}));
+
+	svgWH = d3.select("#scPlot")
+	svgWH.selectAll("newbies")
+		.data([todayNow]).enter().append('circle').attr("class","dot")
+	    .attr("cx", function(d, i) { return xScale(d.date) })
+	    .attr("cy", function(d) { return yScale(d.sc) })
+	    .attr("r", 5)
+		.attr('fill','purple').attr('fill-opacity', .9)
+.transition().delay(500).duration(750).attr('fill-opacity',0);
+
+
+
+	svgWH = d3.select("#hiPlot")
+	svgWH.selectAll("newbies")
+		.data([todayNow]).enter().append('circle').attr("class","dot")
+	    .attr("cx", function(d, i) { return xScale(d.date) })
+	    .attr("cy", function(d) { return yScale(d.hi) })
+	    .attr("r", 5)
+		.attr('fill','green').attr('fill-opacity', .9)
+.transition().delay(500).duration(750).attr('fill-opacity',0);
+
+	svgWH = d3.select("#taPlot")
+	svgWH.selectAll("newbies")
+		.data([todayNow]).enter().append('circle').attr("class","dot")
+	    .attr("cx", function(d, i) { return xScale(d.date) })
+	    .attr("cy", function(d) { return yScale(d.ta) })
+	    .attr("r", 5)
+		.attr('fill','blue').attr('fill-opacity', .9)
+.transition().delay(500).duration(750).attr('fill-opacity',0);
+}
+
+var Hwidth = 340, Hheight = 160, vMarg = 20, hMarg = 30;
+	d3.select("#scChart")
+	.append("svg")
+	.attr("width", Hwidth + hMarg + hMarg)
+	.attr("height", Hheight + vMarg+vMarg)
+	.attr('position','absolute').attr('left','600px').attr('top','0px')
+	.append('g')
+	.attr('transform','translate('+ hMarg + ',' + vMarg + ')').attr('id','taPlot')
+
+	d3.select("#hiChart")
+	.append("svg")
+	.attr("width", Hwidth + hMarg + hMarg)
+	.attr("height", Hheight + vMarg+vMarg)
+	.attr('position','absolute').attr('left','600px').attr('top','200px')
+	.append('g')
+	.attr('transform','translate('+ hMarg + ',' + vMarg + ')').attr('id','hiPlot')
+
+	d3.select("#taChart")
+	.append("svg")
+	.attr("width", Hwidth + hMarg + hMarg)
+	.attr("height", Hheight + vMarg+vMarg)
+	.attr('position','absolute').attr('left','600px').attr('top','400px')
+	.append('g')
+	.attr('transform','translate('+ hMarg + ',' + vMarg + ')').attr('id','scPlot');
+
+
+
+drawHeightCharts();
+update(0, true);
+	});
+	});	
+})
+
+
+
+function prepare(d) {
+  d.sc = +d.sc;
+  d.hi = +d.hi;
+  d.ta = +d.ta;
+  d.surf = +d.surf;
+  d.date = parseDate(d.date);
+  return d;
+}
+function prepare2(d) {
+  d.height = +d.height;
+  d.speed = +d.speed;
+  return d;
+}
+
+
+
+</script>
+</body>
